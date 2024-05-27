@@ -1,0 +1,603 @@
+#This file contains the code to automatically run the supervised Stylo analyses, except for rolling.classify. It starts with imposters.optimize(), then imposters, then does the analyses with the algorithms.
+#Check rownames(word.frequencies) to make sure that you're keeping the appropriate rows for each before running the full test, as this code was made before adding the regulations to the test set.
+
+library(stylo)
+deltas = c("delta", "cosine", "simple", "canberra", "argamon", "wurzburg", "eder", "euclidean", "manhattan", "entropy", "minmax")
+algos = c("svm", "nsc", "naivebayes", "knn")
+macroaveragef1Matrix = matrix(data = NA, nrow = 18, ncol = length(c(deltas,algos)))
+rownames(macroaveragef1Matrix) = c("70MFC3-g With Masonic", "70MFC3-g Without Masonic","60mfw With Masonic", "60mfw Without Masonic", "60mfw2gWMasonic", "60MFW2gWoMasonic", "POS-NLTK W/Masonic", "POS-NLTK w/o Masonic","POS-NLTK2g W/Masonic", "POS-NLTK2g w/o Masonic", "POS-NLTK3gWithMasonic", "POSNLTK3gWoMasonic", "70MFC3-g modernized, Masonic", "70MFC3-g modernized, w/o Masonic", "60mfw modernized with Masonic", "60mfw modernized Without Masonic", "60mfw2g modernized w/Masonic", "60MFW2g Modernized W/o Masonic")
+colnames(macroaveragef1Matrix) = c(deltas, algos)
+df = matrix(data = NA, nrow = 18,ncol=length(deltas))
+colnames(df) = deltas
+rownames(df) = rownames(macroaveragef1Matrix)
+algos = c("svm", "nsc", "naivebayes", "knn")
+df2 = matrix(data = NA, nrow = 18,ncol=length(algos))
+colnames(df2) = algos
+rownames(df2) = rownames(df)
+p2s = matrix(data = NA, nrow = 18,ncol=length(deltas))
+colnames(p2s) = deltas
+rownames(p2s) = rownames(df)
+p1s = p2s
+
+
+setwd(Directory_with_untagged_corpus)
+texts = load.corpus(files = "all", corpus.dir = "Corpus")
+mfc3g = txt.to.features(texts, features = "c", ngram.size=3)
+freq.list = make.frequency.list(mfc3g, head = 70)
+word.frequencies = make.table.of.frequencies(corpus = mfc3g, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+imp70mfc3gwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(imp70mfc3gwithmasonic) = deltas
+rownames(imp70mfc3gwithmasonic) = rownames(chargesandconst)
+imp70mfc3gwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(imp70mfc3gwithoutmasonic) = deltas
+rownames(imp70mfc3gwithoutmasonic) = rownames(chargesandconst)
+
+
+algo70mfc3gwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algo70mfc3gwithmasonic) = algos
+rownames(algo70mfc3gwithmasonic) = rownames(chargesandconst)
+algo70mfc3gwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algo70mfc3gwithoutmasonic) = algos
+rownames(algo70mfc3gwithoutmasonic) = rownames(chargesandconst)
+
+
+i=1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){imp70mfc3gwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){imp70mfc3gwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){imp70mfc3gwithmasonic[k,j]="Desaguliers"}else{imp70mfc3gwithmasonic[k,j]="Neither"}}}
+imp70mfc3gwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algo70mfc3gwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algo70mfc3gwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algo70mfc3gwithmasonic[,j] = "Not Pass"}}
+algo70mfc3gwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){imp70mfc3gwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){imp70mfc3gwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){imp70mfc3gwithoutmasonic[k,j]="Desaguliers"}else{imp70mfc3gwithoutmasonic[k,j]="Neither"}}}
+imp70mfc3gwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algo70mfc3gwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algo70mfc3gwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algo70mfc3gwithoutmasonic[,j] = "Not Pass"}}
+algo70mfc3gwithoutmasonic
+i=i+1
+
+texts = load.corpus.and.parse(files = "all", corpus.dir = "Corpus")
+freq.list= make.frequency.list(texts, head=60) #Since there are quite few content words, I won't bother taking them out right now
+word.frequencies= make.table.of.frequencies(corpus = texts, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+algo60mfwwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algo60mfwwithmasonic) = algos
+rownames(algo60mfwwithmasonic) = rownames(chargesandconst)
+algo60mfwwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algo60mfwwithoutmasonic) = algos
+rownames(algo60mfwwithoutmasonic) = rownames(chargesandconst)
+
+imp60mfwwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(imp60mfwwithmasonic) = deltas
+rownames(imp60mfwwithmasonic) = rownames(chargesandconst)
+imp60mfwwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(imp60mfwwithoutmasonic) = deltas
+rownames(imp60mfwwithoutmasonic) = rownames(chargesandconst)
+
+
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){imp60mfwwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){imp60mfwwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){imp60mfwwithmasonic[k,j]="Desaguliers"}else{imp60mfwwithmasonic[k,j]="Neither"}}}
+imp60mfwwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algo60mfwwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algo60mfwwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algo60mfwwithmasonic[,j] = "Not Pass"}}
+algo60mfwwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){imp60mfwwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){imp60mfwwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){imp60mfwwithoutmasonic[k,j]="Desaguliers"}else{imp60mfwwithoutmasonic[k,j]="Neither"}}}
+imp60mfwwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algo60mfwwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algo60mfwwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algo60mfwwithoutmasonic[,j] = "Not Pass"}}
+algo60mfwwithoutmasonic
+i=i+1
+
+setwd(Directory where you want to save the .csv files)
+write.csv(imp70mfc3gwithmasonic,"imp70mfc3gwithmasonic.csv")
+write.csv(imp70mfc3gwithoutmasonic,"imp70mfc3gwithoutmasonic.csv")
+write.csv(imp60mfwwithmasonic,"imp60mfwwithmasonic.csv")
+write.csv(imp60mfwwithoutmasonic,"imp60mfwwithoutmasonic.csv")
+write.csv(algo70mfc3gwithmasonic,"algo70mfc3gwithmasonic.csv")
+write.csv(algo70mfc3gwithoutmasonic,"algo70mfc3gwithoutmasonic.csv")
+write.csv(algo60mfwwithmasonic,"algo60mfwwithmasonic.csv")
+write.csv(algo60mfwwithoutmasonic,"algo60mfwwithoutmasonic.csv")
+
+setwd(Back to the directory of the untagged corpus)
+texts = load.corpus.and.parse(files = "all", corpus.dir = "Corpus", ngram.size=2)
+freq.list= make.frequency.list(texts, head=60)
+word.frequencies= make.table.of.frequencies(corpus = texts, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+algo60mfwwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algo60mfwwithmasonic) = algos
+rownames(algo60mfwwithmasonic) = rownames(chargesandconst)
+algo60mfwwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algo60mfwwithoutmasonic) = algos
+rownames(algo60mfwwithoutmasonic) = rownames(chargesandconst)
+
+imp60mfwwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(imp60mfwwithmasonic) = deltas
+rownames(imp60mfwwithmasonic) = rownames(chargesandconst)
+imp60mfwwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(imp60mfwwithoutmasonic) = deltas
+rownames(imp60mfwwithoutmasonic) = rownames(chargesandconst)
+
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){imp60mfwwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){imp60mfwwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){imp60mfwwithmasonic[k,j]="Desaguliers"}else{imp60mfwwithmasonic[k,j]="Neither"}}}
+imp60mfwwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algo60mfwwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algo60mfwwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algo60mfwwithmasonic[,j] = "Not Pass"}}
+algo60mfwwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){imp60mfwwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){imp60mfwwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){imp60mfwwithoutmasonic[k,j]="Desaguliers"}else{imp60mfwwithoutmasonic[k,j]="Neither"}}}
+imp60mfwwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algo60mfwwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algo60mfwwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algo60mfwwithoutmasonic[,j] = "Not Pass"}}
+algo60mfwwithoutmasonic
+i=i+1
+
+setwd(Directory where you wish to save the CSV files)
+write.csv(imp60mfwwithmasonic,"imp60mfw2gwithmasonic.csv")
+write.csv(imp60mfwwithoutmasonic,"imp60mfw2gwithoutmasonic.csv")
+write.csv(algo60mfwwithmasonic,"algo60mfw2gwithmasonic.csv")
+write.csv(algo60mfwwithoutmasonic,"algo60mfw2gwithoutmasonic.csv")
+
+
+setwd(Directory for the POS tagged corpus)
+texts = load.corpus.and.parse(files = "all", corpus.dir = "Corpus")
+freq.list= make.frequency.list(texts) 
+word.frequencies= make.table.of.frequencies(corpus = texts, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+
+impPOSNLTKwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impPOSNLTKwithmasonic) = deltas
+rownames(impPOSNLTKwithmasonic) = rownames(chargesandconst)
+impPOSNLTKwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impPOSNLTKwithoutmasonic) = deltas
+rownames(impPOSNLTKwithoutmasonic) = rownames(chargesandconst)
+
+algoPOSNLTKwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algoPOSNLTKwithmasonic) = algos
+rownames(algoPOSNLTKwithmasonic) = rownames(chargesandconst)
+algoPOSNLTKwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algoPOSNLTKwithoutmasonic) = algos
+rownames(algoPOSNLTKwithoutmasonic) = rownames(chargesandconst)
+
+
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impPOSNLTKwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impPOSNLTKwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impPOSNLTKwithmasonic[k,j]="Desaguliers"}else{impPOSNLTKwithmasonic[k,j]="Neither"}}}
+impPOSNLTKwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algoPOSNLTKwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algoPOSNLTKwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algoPOSNLTKwithmasonic[,j] = "Not Pass"}}
+algoPOSNLTKwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impPOSNLTKwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impPOSNLTKwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impPOSNLTKwithoutmasonic[k,j]="Desaguliers"}else{impPOSNLTKwithoutmasonic[k,j]="Neither"}}}
+impPOSNLTKwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algoPOSNLTKwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algoPOSNLTKwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algoPOSNLTKwithoutmasonic[,j] = "Not Pass"}}
+algoPOSNLTKwithoutmasonic
+i=i+1
+
+
+setwd(Directory where you wish to save the csv files)
+write.csv(impPOSNLTKwithmasonic,"impPOSNLTKwithmasonic.csv")
+write.csv(impPOSNLTKwithoutmasonic,"impPOSNLTKwithoutmasonic.csv")
+write.csv(algoPOSNLTKwithmasonic,"algoPOSNLTKwithmasonic.csv")
+write.csv(algoPOSNLTKwithoutmasonic,"algoPOSNLTKwithoutmasonic.csv")
+
+setwd(POS tagged directory)
+texts = load.corpus.and.parse(files = "all", corpus.dir = "Corpus", ngram.size=2)
+freq.list= make.frequency.list(texts) #Since there are quite few content words, I won't bother taking them out right now
+word.frequencies= make.table.of.frequencies(corpus = texts, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+
+impPOSNLTKwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impPOSNLTKwithmasonic) = deltas
+rownames(impPOSNLTKwithmasonic) = rownames(chargesandconst)
+impPOSNLTKwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impPOSNLTKwithoutmasonic) = deltas
+rownames(impPOSNLTKwithoutmasonic) = rownames(chargesandconst)
+
+algoPOSNLTKwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algoPOSNLTKwithmasonic) = algos
+rownames(algoPOSNLTKwithmasonic) = rownames(chargesandconst)
+algoPOSNLTKwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algoPOSNLTKwithoutmasonic) = algos
+rownames(algoPOSNLTKwithoutmasonic) = rownames(chargesandconst)
+
+
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impPOSNLTKwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impPOSNLTKwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impPOSNLTKwithmasonic[k,j]="Desaguliers"}else{impPOSNLTKwithmasonic[k,j]="Neither"}}}
+impPOSNLTKwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algoPOSNLTKwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algoPOSNLTKwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algoPOSNLTKwithmasonic[,j] = "Not Pass"}}
+algoPOSNLTKwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impPOSNLTKwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impPOSNLTKwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impPOSNLTKwithoutmasonic[k,j]="Desaguliers"}else{impPOSNLTKwithoutmasonic[k,j]="Neither"}}}
+impPOSNLTKwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algoPOSNLTKwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algoPOSNLTKwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algoPOSNLTKwithoutmasonic[,j] = "Not Pass"}}
+algoPOSNLTKwithoutmasonic
+i=i+1
+
+setwd(Directory where you wish to save the csv files)
+
+write.csv(impPOSNLTKwithmasonic,"impPOSNLTK2gwithmasonic.csv")
+write.csv(impPOSNLTKwithoutmasonic,"impPOSNLTK2gwithoutmasonic.csv")
+write.csv(algoPOSNLTKwithmasonic,"algoPOSNLTK2gwithmasonic.csv")
+write.csv(algoPOSNLTKwithoutmasonic,"algoPOSNLTK2gwithoutmasonic.csv")
+setwd(Directory with the POS tagged corpus)
+texts = load.corpus.and.parse(files = "all", corpus.dir = "Corpus", ngram.size=3)
+freq.list= make.frequency.list(texts) #Since there are quite few content words, I won't bother taking them out right now
+word.frequencies= make.table.of.frequencies(corpus = texts, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+
+impPOSNLTKwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impPOSNLTKwithmasonic) = deltas
+rownames(impPOSNLTKwithmasonic) = rownames(chargesandconst)
+impPOSNLTKwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impPOSNLTKwithoutmasonic) = deltas
+rownames(impPOSNLTKwithoutmasonic) = rownames(chargesandconst)
+
+
+algoPOSNLTKwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algoPOSNLTKwithmasonic) = algos
+rownames(algoPOSNLTKwithmasonic) = rownames(chargesandconst)
+algoPOSNLTKwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algoPOSNLTKwithoutmasonic) = algos
+rownames(algoPOSNLTKwithoutmasonic) = rownames(chargesandconst)
+
+
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impPOSNLTKwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impPOSNLTKwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impPOSNLTKwithmasonic[k,j]="Desaguliers"}else{impPOSNLTKwithmasonic[k,j]="Neither"}}}
+impPOSNLTKwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algoPOSNLTKwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algoPOSNLTKwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algoPOSNLTKwithmasonic[,j] = "Not Pass"}}
+algoPOSNLTKwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impPOSNLTKwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impPOSNLTKwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impPOSNLTKwithoutmasonic[k,j]="Desaguliers"}else{impPOSNLTKwithoutmasonic[k,j]="Neither"}}}
+impPOSNLTKwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algoPOSNLTKwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algoPOSNLTKwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algoPOSNLTKwithoutmasonic[,j] = "Not Pass"}}
+algoPOSNLTKwithoutmasonic
+i=i+1
+
+setwd(Directory where you wish to save the csv files)
+write.csv(impPOSNLTKwithmasonic,"impPOSNLTK3gwithmasonic.csv")
+write.csv(impPOSNLTKwithoutmasonic,"impPOSNLTK3gwithoutmasonic.csv")
+write.csv(algoPOSNLTKwithmasonic,"algoPOSNLTK3gwithmasonic.csv")
+write.csv(algoPOSNLTKwithoutmasonic,"algoPOSNLTK3gwithoutmasonic.csv")
+
+setwd(Modernised corpus directory)
+texts = load.corpus.and.parse(files = "all", corpus.dir = "Corpus")
+freq.list= make.frequency.list(texts, head =60) 
+word.frequencies= make.table.of.frequencies(corpus = texts, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+algomodernized70mfc3gwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algomodernized70mfc3gwithmasonic) = algos
+rownames(algomodernized70mfc3gwithmasonic) = rownames(chargesandconst)
+algomodernized70mfc3gwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algomodernized70mfc3gwithoutmasonic) = algos
+rownames(algomodernized70mfc3gwithoutmasonic) = rownames(chargesandconst)
+
+impmodernized70mfc3gwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impmodernized70mfc3gwithmasonic) = deltas
+rownames(impmodernized70mfc3gwithmasonic) = rownames(chargesandconst)
+impmodernized70mfc3gwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impmodernized70mfc3gwithoutmasonic) = deltas
+rownames(impmodernized70mfc3gwithoutmasonic) = rownames(chargesandconst)
+
+
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impmodernized70mfc3gwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impmodernized70mfc3gwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impmodernized70mfc3gwithmasonic[k,j]="Desaguliers"}else{impmodernized70mfc3gwithmasonic[k,j]="Neither"}}}
+impmodernized70mfc3gwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algomodernized70mfc3gwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algomodernized70mfc3gwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algomodernized70mfc3gwithmasonic[,j] = "Not Pass"}}
+algomodernized70mfc3gwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impmodernized70mfc3gwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impmodernized70mfc3gwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impmodernized70mfc3gwithoutmasonic[k,j]="Desaguliers"}else{impmodernized70mfc3gwithoutmasonic[k,j]="Neither"}}}
+impmodernized70mfc3gwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algomodernized70mfc3gwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algomodernized70mfc3gwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algomodernized70mfc3gwithoutmasonic[,j] = "Not Pass"}}
+algomodernized70mfc3gwithoutmasonic
+i=i+1
+
+
+texts = load.corpus.and.parse(files = "all", corpus.dir = "Corpus")
+freq.list= make.frequency.list(texts, head=60)
+word.frequencies= make.table.of.frequencies(corpus = texts, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+
+algomodernized60mfwwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algomodernized60mfwwithmasonic) = algos
+rownames(algomodernized60mfwwithmasonic) = rownames(chargesandconst)
+algomodernized60mfwwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algomodernized60mfwwithoutmasonic) = algos
+rownames(algomodernized60mfwwithoutmasonic) = rownames(chargesandconst)
+
+impmodernized60mfwwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impmodernized60mfwwithmasonic) = deltas
+rownames(impmodernized60mfwwithmasonic) = rownames(chargesandconst)
+impmodernized60mfwwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impmodernized60mfwwithoutmasonic) = deltas
+rownames(impmodernized60mfwwithoutmasonic) = rownames(chargesandconst)
+
+
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impmodernized60mfwwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impmodernized60mfwwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impmodernized60mfwwithmasonic[k,j]="Desaguliers"}else{impmodernized60mfwwithmasonic[k,j]="Neither"}}}
+impmodernized60mfwwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algomodernized60mfwwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algomodernized60mfwwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algomodernized60mfwwithmasonic[,j] = "Not Pass"}}
+algomodernized60mfwwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impmodernized60mfwwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impmodernized60mfwwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impmodernized60mfwwithoutmasonic[k,j]="Desaguliers"}else{impmodernized60mfwwithoutmasonic[k,j]="Neither"}}}
+impmodernized60mfwwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algomodernized60mfwwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algomodernized60mfwwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algomodernized60mfwwithoutmasonic[,j] = "Not Pass"}}
+algomodernized60mfwwithoutmasonic
+i=i+1
+
+setwd(Directory where you wish to save the CSV files)
+write.csv(impmodernized70mfc3gwithmasonic,"impmodernized70mfc3gwithmasonic.csv")
+write.csv(impmodernized70mfc3gwithoutmasonic,"impmodernized70mfc3gwithoutmasonic.csv")
+
+write.csv(impmodernized60mfwwithmasonic,"impmodernized60mwgwithmasonic.csv")
+write.csv(impmodernized60mfwwithoutmasonic,"impmodernized60mfwwithoutmasonic.csv")
+
+write.csv(algomodernized70mfc3gwithmasonic,"algomodernized70mfc3gwithmasonic.csv")
+write.csv(algomodernized70mfc3gwithoutmasonic,"algomodernized70mfc3gwithoutmasonic.csv")
+write.csv(algomodernized60mfwwithmasonic,"algomodernized60mfwwithmasonic.csv")
+write.csv(algomodernized60mfwwithoutmasonic,"algomodernized60mfwwithoutmasonic.csv")
+
+
+setwd(Modernized corpus directory)
+texts = load.corpus.and.parse(files = "all", corpus.dir = "Corpus")
+freq.list= make.frequency.list(texts, head=60) #Since there are quite few content words, I won't bother taking them out right now
+word.frequencies= make.table.of.frequencies(corpus = texts, features = freq.list)
+chargesandconst= word.frequencies[c(8:19, 28:30),]
+candidateswithmasonic = word.frequencies[c(1:7,20:25),]
+candidateswithoutmasonic = word.frequencies[c(4:7,20:25),]
+
+reference.set.with.masonic=word.frequencies[-c(8:19,28:30),]
+reference.set.without.masonic=word.frequencies[-c(1:3,8:19,28:30),]
+
+
+algomodernized60mfwwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algomodernized60mfwwithmasonic) = algos
+rownames(algomodernized60mfwwithmasonic) = rownames(chargesandconst)
+algomodernized60mfwwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(algos))
+colnames(algomodernized60mfwwithoutmasonic) = algos
+rownames(algomodernized60mfwwithoutmasonic) = rownames(chargesandconst)
+
+impmodernized60mfwwithmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impmodernized60mfwwithmasonic) = deltas
+rownames(impmodernized60mfwwithmasonic) = rownames(chargesandconst)
+impmodernized60mfwwithoutmasonic =matrix(data = NA, nrow = length(rownames(chargesandconst)), ncol=length(deltas))
+colnames(impmodernized60mfwwithoutmasonic) = deltas
+rownames(impmodernized60mfwwithoutmasonic) = rownames(chargesandconst)
+
+
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.with.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.with.masonic, candidate.set = candidateswithmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impmodernized60mfwwithmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impmodernized60mfwwithmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impmodernized60mfwwithmasonic[k,j]="Desaguliers"}else{impmodernized60mfwwithmasonic[k,j]="Neither"}}}
+impmodernized60mfwwithmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.with.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algomodernized60mfwwithmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.with.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algomodernized60mfwwithmasonic[,j] = perform.nsc(training.set = reference.set.with.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algomodernized60mfwwithmasonic[,j] = "Not Pass"}}
+algomodernized60mfwwithmasonic
+i=i+1
+for(j in 1:length(deltas)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method="delta", distance=deltas[j])
+df[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+results =  imposters.optimize(reference.set.without.masonic, iterations = 100, imposters=1, distance=deltas[j])
+p1s[i,j] = results[1]
+p2s[i,j] = results[2]
+for(k in 1:length(rownames(chargesandconst))){results = imposters(reference.set = reference.set.without.masonic, candidate.set = candidateswithoutmasonic, test = chargesandconst[k,], iterations = 100, imposters=1, distance=deltas[j])
+if((results[1] > p2s[i,j] & results[2] >p2s[i,j])){impmodernized60mfwwithoutmasonic[k,j]= "TIE"} else if(results[1] > p2s[i,j]){impmodernized60mfwwithoutmasonic[k,j]="Anderson"} else if (results[2] > p2s[i,j]){impmodernized60mfwwithoutmasonic[k,j]="Desaguliers"}else{impmodernized60mfwwithoutmasonic[k,j]="Neither"}}}
+impmodernized60mfwwithoutmasonic
+for(j in 1:length(algos)){results = crossv(training.set = reference.set.without.masonic,cv.mode="leaveoneout", classification.method=algos[j])
+df2[i,j]= sum(results$y[1:13])/13
+macroaveragef1Matrix[i,9+j] = (performance.measures(results)$f[1]+performance.measures(results)$f[2])/2
+if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] != "nsc"){algomodernized60mfwwithoutmasonic[,j] =classify(gui = FALSE, training.frequencies = reference.set.without.masonic, test.frequencies = chargesandconst,classification.method=algos[j])$predicted}else if(macroaveragef1Matrix[i,9+j]>.8 & algos[j] == "nsc"){algomodernized60mfwwithoutmasonic[,j] = perform.nsc(training.set = reference.set.without.masonic, test.set = chargesandconst, show.features = TRUE, no.of.candidates = 5, classes.training.set = c("Anderson", "Desaguliers", "Folkes","Payne", "Stukeley"))$y}else{algomodernized60mfwwithoutmasonic[,j] = "Not Pass"}}
+algomodernized60mfwwithoutmasonic
+i=i+1
+
+setwd(Directory where you wish to save the csv files)
+
+write.csv(impmodernized60mfwwithmasonic,"impmodernized60mw2gwithmasonic.csv")
+write.csv(impmodernized60mfwwithoutmasonic,"impmodernized60mfw2gwithoutmasonic.csv")
+write.csv(algomodernized60mfwwithmasonic,"algomodernized60mfw2gwithmasonic.csv")
+write.csv(algomodernized60mfwwithoutmasonic,"algomodernized60mfw2gwithoutmasonic.csv")
+
+
+
+
+write.csv(df,"Crossval_deltas-with-Payne.csv")
+write.csv(df2,"Crossval_algos-with-Payne.csv")
+write.csv(macroaveragef1Matrix,"macroaveragef1Matrix_with-Payne.csv")
+write.csv(p1s,"p1s.csv")
+write.csv(p2s,"p2s.csv")
